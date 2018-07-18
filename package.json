@@ -10,7 +10,8 @@
   "license": "ISC",
   "dependencies": {
     "fs": "0.0.1-security",
-    "ramda": "^0.25.0"
+    "ramda": "^0.25.0",
+    "rimraf": "^2.6.2"
   },
   "devDependencies": {
     "eslint-config-airbnb": "^17.0.0",
