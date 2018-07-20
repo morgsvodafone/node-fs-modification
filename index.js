@@ -3,81 +3,73 @@ const path = require('path');
 const rimraf = require('rimraf');
 const R = require('ramda');
 
-const filterP = (funcP, arr) => (
-  R.pipeP(
-    ...arr.map(el => output => funcP(el).then(
-      outputBool => Promise.resolve(
-        outputBool ? R.append(el, output) : output,
-      ),
-    )),
-  )([])
+const ifElseP = (conditionP, onTrue, onFalse) => async arg => (
+  await conditionP(arg) ? onTrue(arg) : onFalse(arg)
 );
 
-const isDirectory = dir => new Promise((resolve, reject) => {
+const isDirectory = dir => new Promise((resolve) => {
   fs.stat(dir, (err, stat) => {
-    if (err) reject(err);
+    if (err) throw err;
 
     resolve(stat.isDirectory());
   });
 });
 
-const getSubDirectories = children => filterP(
-  isDirectory,
-  children,
-);
-
-const getChildrenFromDirectory = directory => new Promise((resolve, reject) => {
+const getChildrenFromDirectory = directory => new Promise((resolve) => {
   fs.readdir(directory, (err, children) => {
-    if (err) reject(err);
-    if (!children.length) reject();
+    if (err) throw err;
 
-    resolve(children);
+    resolve(
+      children.map(child => path.join(directory, child)),
+    );
   });
 });
 
-// TODO:
-//  - handle rejection
-//  - add included file path
-//  - integrate with main branch
+const filterExcludedFileExt = includedExt => files => (
+  files.filter(file => R.contains(path.extname(file), includedExt))
+);
 
-const getFilesRecursive = rootDir => new Promise(async (resolve, reject) => {
-  const getAbsPath = relPath => path.join(rootDir, relPath);
-
-  const childrenRelative = await getChildrenFromDirectory(rootDir);
-  const children = childrenRelative.map(child => getAbsPath(child));
-  const subDirectories = await getSubDirectories(children);
-  const files = R.uniq(children, subDirectories); // Not the right ramda function
-
-  const filesFromSubDirectories = await Promise.all(
-    R.map(getFilesRecursive, subDirectories),
-  );
-
-  resolve(
-    R.flatten(
-      files.concat(filesFromSubDirectories),
+const expandSubDirectories = children => Promise.all(
+  R.map(
+    ifElseP(
+      isDirectory,
+      getFilesRecursive, // eslint-disable-line no-use-before-define,
+      R.identity,
     ),
-  );
-});
+    children,
+  ),
+);
 
-const removeFileOrDirectory = inputPath => new Promise((resolve, reject) => {
-  const rejectIfErr = (err) => {
-    if (err) reject(err);
-  };
-  const removeFile = filePath => fs.unlink(filePath, rejectIfErr);
-  const removeDir = dirPath => rimraf(dirPath, rejectIfErr);
+const getFilesRecursive = dir => R.pipeP(
+  getChildrenFromDirectory,
+  expandSubDirectories,
+  R.flatten,
+  filterExcludedFileExt(['.js']),
+)(dir);
 
-  fs.unlink(inputPath, async (err) => {
-    rejectIfErr(err);
+getFilesRecursive('./App').then(d => console.log(d));
 
-    R.ifElse(
-      await isDirectory,
-      removeDir,
-      removeFile,
-    )(inputPath);
+const removeFile = filePath => new Promise((resolve) => {
+  fs.unlink(filePath, (err) => {
+    if (err) throw err;
 
     resolve();
   });
 });
+
+const removeDir = dirPath => new Promise((resolve) => {
+  rimraf(dirPath, (err) => {
+    if (err) throw err;
+
+    resolve();
+  });
+});
+
+const removeFileOrDirectory = async inputPath => R.ifElse(
+  await isDirectory,
+  await removeDir,
+  await removeFile,
+)(inputPath);
 
 module.exports = {
   getFilesRecursive,
