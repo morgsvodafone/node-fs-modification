@@ -25,29 +25,20 @@ const getChildrenFromDirectory = directory => new Promise((resolve) => {
   });
 });
 
-const filterExcludedFileExt = includedExt => files => (
-  files.filter(file => R.contains(path.extname(file), includedExt))
-);
-
-const expandSubDirectories = children => Promise.all(
+const expandSubDirectoriesRecursive = async dir => Promise.all(
   R.map(
     ifElseP(
       isDirectory,
-      getFilesRecursive, // eslint-disable-line no-use-before-define,
+      expandSubDirectoriesRecursive,
       R.identity,
     ),
-    children,
+    await getChildrenFromDirectory(dir),
   ),
 );
 
-const getFilesRecursive = dir => R.pipeP(
-  getChildrenFromDirectory,
-  expandSubDirectories,
-  R.flatten,
-  filterExcludedFileExt(['.js']),
-)(dir);
-
-getFilesRecursive('./App').then(d => console.log(d));
+const filterExcludedFileExt = (includedExt = []) => files => (
+  files.filter(file => R.contains(path.extname(file), includedExt))
+);
 
 const removeFile = filePath => new Promise((resolve) => {
   fs.unlink(filePath, (err) => {
@@ -71,7 +62,13 @@ const removeFileOrDirectory = async inputPath => R.ifElse(
   await removeFile,
 )(inputPath);
 
+const getFiles = ({ dir = '.', includedExt }) => R.pipeP(
+  expandSubDirectoriesRecursive,
+  R.flatten,
+  filterExcludedFileExt(includedExt),
+)(dir);
+
 module.exports = {
-  getFilesRecursive,
   removeFileOrDirectory,
+  getFiles,
 };
